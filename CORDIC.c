@@ -3,18 +3,32 @@
 #include "arm_neon.h" // delete if it causes errors when compiling. 
 //neon supports vectors inside of registers so it may be useful (probably not) 
 
+
+//maths visualized on desmos links:
+// https://www.desmos.com/calculator/go3wqxm0hu <- Rotation Mode
+// idk ill do vectoring later
 /*
 	TODO:
 		- On lines 82-85, check if that percision is only limited to 16 bits on the CORDIC.pdf
 		 because the registers hes simulating are 16 bits or if its just an arbitrary number he picked for accuracy
-		 	-> If arbitrary, leave the "1 << 15"s alone, else, change to 63
+			-> If arbitrary, leave the "1 << 15"s alone, else, change to 31
 		- Check CORDIC_Rotating, did not have time to compile this program yet
 		- Create some structs for the test bench to test for multiple x, y, z and theta variables
-		- Check if zftable is accurate enough 
-
+		- Check if zftable is accurate enough
+		- Do a SIMD approach to the shifts, may need to utilize neon's "vectorization", whether it be embedded asm, changing manually in the .s file or specifying the --vectorize in compilation
+			-> id imagine we'd change our registers from "r1 = 0xAB r2 = 0xCD" to "r3 = 0xABCD" and do our calculations on r3, then port them back to r1 and r2.
+		- n issue slot machine? check it out..
+		- change int size for addition and subtraction, if we lower it, these operations will be faster.
 */
-//table of precalculated atan(2^-i) up to 16 iterations.. may want to increase if we figure out the mysterious " 15's " point #1 of the todo.
-float zftable[16] = { 
+
+#define FIXED_POINT_SCALE 32768. // 1 << 15
+#define A_ 1.64676025806 // read slides 12, 13 and look at desmos calculations to understand referenced value.
+
+// so "A_" in our calculations is what i like to call the "fuck you" number. this is because it makes you confused as to whats happening,
+// so you spend an hour trying to debug PERFECTLY FINE code, then you realize its the mathematitions made it just to fuck with you. 
+
+//table of precalculated atan(2^-i) up to 16 iterations
+float zftable[16] = {
 					45.00000000,
 					26.56505118,
 					14.03624347,
@@ -33,40 +47,39 @@ float zftable[16] = {
 					0.001748528
 };
 
-//blank array to store the fixed point conversion of the zftable
-int zitable[16]; 
-
-void CORDIC_Rotating(int* x, int* y, int* theta) {
+void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 	int i = 0;
-	int x1 = *x; int y1 = *y; int z1 = *theta;
-	int x2; int y2;
-	
+	register int x1 = *x; register int y1 = *y; register int theta1 = *theta;
+	register int x2; register int y2;
+
 	while (i < 16) {
-		int sign = (!!z1) | (z1 >> 63); 
-		// im making the sigma operator reverse its intended output
-		x2 = x1 - (sign * (y1 >> i)); 
+		int sign = (!!theta1) | (theta1 >> 31);
+		
+		x2 = x1 - (sign * (y1 >> i));
 		y2 = y1 + (sign * (x1 >> i));
-		z1 = z1 - (sign * zitable[i]);
+		theta1 = theta1 - (sign * ztable[i]);
 		x1 = x2;
 		y1 = y2;
+		
+		//printf("theta1: %f,  iter: %d \n", ((double)theta1 / FIXED_POINT_SCALE), i); //debug
 		i++;
 	}
 	*x = x1;
 	*y = y1;
-	*theta = z1;
+	*theta = theta1;
 }
 
-void CORDIC_Vectoring(int* x, int* y, int* z) {
+void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
 	int i = 0;
-	int x1 = *x; int y1 = *y; int z1 = 0;
-	int x2; int y2;
+	register int x1 = *x; register int y1 = *y; register int z1 = 0;
+	register int x2; register int y2;
 
 	while (i < 16) {
-		int sign = 1 | (y1 >> 63); //assuming 64 bit registers.. 
-		//make sure they span the few that actually have 64 bits, some have 32 or less..
+		int sign = 1 | (y1 >> 31); // (!!y1) can/should work in place of 1.
+		
 		x2 = x1 + (sign * (y1 >> i));
 		y2 = y1 - (sign * (x1 >> i));
-		z1 = z1 + (sign * zitable[i]);
+		z1 = z1 + (sign * ztable[i]);
 		x1 = x2;
 		y1 = y2;
 		i++;
@@ -75,30 +88,49 @@ void CORDIC_Vectoring(int* x, int* y, int* z) {
 	*y = y1;
 	*z = z1;
 }
+/* 
+PARAMS TO PAY ATTENTION TO      x: "any x input"  y: "any y input"
+running in arctan(y/x) mode:    x_d = x, y_d = y, z_d = 0
+running in arctan(x) mode:      x_d = 1, y_d = x, z_d = 0
+running in cos()|sin() mode:    x_d = 1, y_d = 0, z_d = angle
+*/
 
+/*
+Expected outputs from inputs:
+
+Rotation mode:
+	ins: theta = -25 degrees
+		x = cos(-25 deg) = 0.906307787037
+		y = sin(-25 deg) = -0.422618261741
+Vectoring mode:	
+*/
+
+//Acts as current testbench
 int main() {
+	int zitable[16];
 	double x_d, y_d, z_d; /* 64-bit floating-point variables */
-	double angle;
-	int x_i, y_i, z_i; /* integer (fixed-point) variables */
-	int angle_i;
+	int x_i, y_i, z_i; 
 
-	x_d = 0.85; 
-	y_d = 0.95; // set to 1 for atan(x) mode. 
-	z_d = atan(y_d / x_d); /* call std-C math routines */
-	x_i = (int)(x_d * (1 << 15)); /* convert the x_d, y_d, z_d */
-	y_i = (int)(y_d * (1 << 15)); /* floats to integers with a */
-	z_i = (int)(z_d * (1 << 15)); /* precision of 16 bits */
-	angle_i = (int)(angle * (1 << 15)); /* precision of 16 bits */ 
-	
-	int i; // NEEDED I DONT KNOW WHY BUT ITS NEEDED TO BE DECLARED OUTSIDE OF THE LOOP
-	for (i = 0; i < 15; i++) {
-		zitable[i] = (int)(zftable[i] * (1 << 15));
+
+	x_d = 1.;  
+	y_d = 0.; 
+	//z_d = atan(y_d / x_d); /* call math.h routines */
+	z_d = -25;
+	x_i = (int)(x_d * (FIXED_POINT_SCALE)); 
+	y_i = (int)(y_d * (FIXED_POINT_SCALE)); 
+	z_i = (int)(z_d * (FIXED_POINT_SCALE)); 
+
+	int i;
+	for (i = 0; i < 16; i++) {
+		zitable[i] = (int)(zftable[i] * (FIXED_POINT_SCALE));
 	} // generates fixed point table for z integers
 
-	CORDIC_Vectoring(&x_i, &y_i, &z_i);
-	printf("z_i = %d\n", z_i);;
-	printf("z_d ( vectoring ) = %f\n", ((double)z_i / (double)(1 << 15)));
-	printf("z_d ( atan ) = %f\n", z_d * 57.295);
+	CORDIC_Rotating(&x_i, &y_i, &z_i, zitable);
+	printf("z_i = %d\n", z_i);
+	printf("z_d = %f\n", ((double)z_i / (double)(FIXED_POINT_SCALE)));
+	printf("x_d ( Rotating ) = %f\n", ((double)x_i / (double)(FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumilated angle component to plain component
+	printf("y_d ( Rotating ) = %f\n", ((double)y_i / (double)(FIXED_POINT_SCALE)) / (A_)); 
+	printf("z_d ( angle ) = %f\n", z_d);
 
 	return 0;
 }
