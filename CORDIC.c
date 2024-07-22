@@ -1,5 +1,8 @@
 #include <math.h>
-#include <stdio.h> 
+#include <stdio.h>
+#include "arm_neon.h" // delete if it causes errors when compiling. 
+//neon supports vectors inside of registers so it may be useful (probably not) 
+
 
 //maths visualized on desmos links:
 // https://www.desmos.com/calculator/go3wqxm0hu <- Rotation Mode
@@ -37,16 +40,17 @@ float zftable[16] = {
 
 // Rotation mode calculates sin and cosine of a vector given an angle
 void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
-	int i = 0;
+	register int i = 0;
 	register int x1 = *x; register int y1 = *y; register int theta1 = *theta;
-	register int x2; register int y2;
+	register int x2; register int y2;; register int next_z;
 
-	while (i < 4) {
+	while (i < 16) {
 		int sign = (!!theta1) | (theta1 >> 31);
 
 		x2 = x1 - (sign * (y1 >> i));
 		y2 = y1 + (sign * (x1 >> i));
-		theta1 = theta1 - (sign * ztable[i]);
+		theta1 = theta1 - (sign * next_z);
+		next_z = ztable[++i];
 		x1 = x2;
 		y1 = y2;
 
@@ -60,16 +64,17 @@ void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 
 // Vectoring mode calculates the angle of a vector given sin and cosine, which is equivalent to calculating arctan(y/x)
 void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
-	int i = 0;
+	register int i = 0;
 	register int x1 = *x; register int y1 = *y; register int z1 = 0;
-	register int x2; register int y2;
+	register int x2; register int y2; register int next_z;
 
-	while (i < 4) {
-		int sign = (!!y1) | (y1 >> 31);
-
+	while (i < 16) {
+		int sign = (!!y1) | (y1 >> 31); 
+		
 		x2 = x1 + (sign * (y1 >> i));
 		y2 = y1 - (sign * (x1 >> i));
-		z1 = z1 + (sign * ztable[i]);
+		z1 = z1 + (sign * next_z);
+		next_z = ztable[++i];
 		x1 = x2;
 		y1 = y2;
 		i++;
@@ -108,7 +113,7 @@ int main() {
 	printf("64-bit float z_d = %f\t\t\t16-bit int z_i = %i\n", z_d, z_i);
 
 	//generate a fixed-point version of the global zftable of floating-point angles
-	int i;
+	register int i;
 	for (i = 0; i < 16; i++) {
 		zitable[i] = (int)(zftable[i] * (FIXED_POINT_SCALE));
 	}
@@ -133,9 +138,9 @@ int main() {
 
 	//uncomment for Vectoring Mode testbench
 	printf("\n\nResults of CORDIC_Vectoring:\n\n");
-	printf("Scaled magnitude result x_i = %f\n", x_out); // A_ is used to transcribe from accumulated angle component to plain component
-	printf("y_i  = %f\n", ((float)y_i / (float)(FIXED_POINT_SCALE)) / (A_));
-	printf("Angle of vector result z_i = %f\n", ((float)z_i / (FIXED_POINT_SCALE)));
+	printf("Scaled magnitude result x_i = %f\n", ((double)x_i / (double)(FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
+	printf("y_i  = %f\n", ((double)y_i / (double)(FIXED_POINT_SCALE)) / (A_)); 
+	printf("Angle of vector result z_i = %f\n", ((double)z_i / (double)(FIXED_POINT_SCALE)));
 	printf("Actual angle of vector = %f\n", atan2(y_d, x_d) * 180 / M_PI); // compare with math.h atan2 function
 
 	return 0;
