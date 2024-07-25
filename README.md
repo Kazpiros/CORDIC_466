@@ -1,8 +1,17 @@
-## Run Cordic
-compile with:
+## Run CORDIC
+Compile with:
 
     gcc CORDIC.c -o cordic -lm 
 
-execute:
+Execute:
 
-    ./cordic
+    ./CORDIC
+
+## Run CORDIC on ARM based Machines
+Compile with:
+
+    arm-linux-gcc -marm -mfloat-abi=softfp -o CORDIC.c CORDIC.exe
+
+Execute:
+
+    ./CORDIC.exe
