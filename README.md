@@ -1,3 +1,14 @@
+# CORDIC
+
+CORDIC is an inexpensive operation that lets the user extract or produce an angle from any two dimensional input vector. 
+
+## Features
+
+- Full ARCTAN Operation
+- SIN() and COS() Computation
+
+>>"True love (CORDIC) doesn't happen right away; it's an ever-growing process. It develops after you've gone through many ups and downs, when you've suffered together, cried together, laughed together." -Ricardo Montalban
+
 ## Run CORDIC
 Compile with:
 
