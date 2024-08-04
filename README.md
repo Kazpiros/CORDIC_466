@@ -26,3 +26,9 @@ Compile with:
 Execute:
 
     ./CORDIC.exe
+
+## Evaluate Performance
+
+run:
+
+    valgrind --tool=cachegrind cordice.exe
