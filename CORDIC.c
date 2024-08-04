@@ -1,7 +1,16 @@
 #include <math.h>
 #include <stdio.h>
-//neon supports vectors inside of registers so it may be useful (probably not) 
 
+/* BARR-C Standards Followed:
+	- Surrounding logical OR operands with parantheses
+	- Using const keyword for variables that are not modified
+	- Using static keyword for functions that are not used outside of the file
+	- Using // for single-line comments
+	- Using /* for multi-line comments
+	- Using a whitespace before and after assignment operators, binary operators, pointer operators, and keywords
+	- Using a whitespace after commas, semicolons, and parentheses
+	- Omitting a whitespace before and after parentheses surrounding expressions, function calls, and type casts
+*/
 
 //maths visualized on desmos links:
 // https://www.desmos.com/calculator/go3wqxm0hu <- Rotation Mode
@@ -13,8 +22,8 @@
 		- change int size for addition and subtraction, if we lower it, these operations will be faster.
 */
 
-#define FIXED_POINT_SCALE 32768. // 1 << 15 float
-#define A_ 1.64676025806 // read slides 12, 13 and look at desmos calculations to understand referenced value.
+#define FIXED_POINT_SCALE 32768. // convert float to int by 1 << 15 (2^15)
+#define A_ 1.64676025806 // prod_{i=0}^{n} (sqrt{1+2^{-2i}})
 #define M_PI 3.14159265359
 
 //table of precalculated atan(2^-i) up to 16 iterations
@@ -37,15 +46,16 @@ float zftable[16] = {
 					0.001748528
 };
 
-// Rotation mode calculates sin and cosine of a vector given an angle
-void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
+//Rotation mode calculates sin and cosine of a vector given an angle
+static void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 	register int i = 0;
 	register int x1 = *x; register int y1 = *y; register int theta1 = *theta;
 	register int x2; register int y2; register int next_z;
 
 	next_z = ztable[0];
 	while (i < 16) {
-		int sign = (!!theta1) | (theta1 >> 31);
+		//extract sign of theta1
+		int sign = (!!theta1) | (theta1 >> 31); //BARR-C standard: surrounding logical OR operands with parantheses
 
 		x2 = x1 - (sign * (y1 >> i));
 		y2 = y1 + (sign * (x1 >> i));
@@ -61,8 +71,8 @@ void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 	*theta = theta1;
 }
 
-// Vectoring mode calculates the angle of a vector given sin and cosine, which is equivalent to calculating arctan(y/x)
-void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
+//Vectoring mode calculates the angle of a vector given sin and cosine, which is equivalent to calculating arctan(y/x)
+static void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
 	register int i = 0;
 	register int x1 = *x; register int y1 = *y; register int z1 = 0;
 	register int x2; register int y2; register int next_z;
@@ -88,19 +98,18 @@ void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
 //Acts as current testbench
 int main() {
 	int zitable[16];
-	float x_d, y_d, z_d; // 64-bit floating-point variables 
-	volatile int x_i, y_i, z_i;  // integer fixed-point variables
+	float x_d, y_d, z_d; //64-bit floating-point variables 
+	volatile int x_i, y_i, z_i;  //integer fixed-point variables
 
-	// uncomment these variables for Vectoring Mode testbench
+	//uncomment these variables for Vectoring Mode testbench
 	x_d = 0.;
 	y_d = 0.;
 	z_d = 0;
 
-	// uncomment these variables for Rotation Mode testbench
+	//uncomment these variables for Rotation Mode testbench
 	//x_d = 1.;  
 	//y_d = 0.; 
-	//z_d = 33; /* call math.h routines */
-
+	//z_d = 33; 
 
 	//promote 64-bit floating-point numbers to 16-bit precision integers
 	x_i = (int)(x_d * (FIXED_POINT_SCALE));
@@ -121,9 +130,7 @@ int main() {
 	//CORDIC_Rotating(&x_i, &y_i, &z_i, zitable);
 	CORDIC_Vectoring(&x_i, &y_i, &z_i, zitable);
 
-
-	float x_out = ((x_i == 0.) ? NAN : (float)x_i / 19898.4641751); // this constant is (FIXED_POINT_SCALE)) / (A_)
-
+	//float x_out = ((x_i == 0.) ? NAN : (float)x_i / 19898.4641751); // this constant is (FIXED_POINT_SCALE)) / (A_)
 
 	printf("z_i parameter= %d\n", z_i); // prints the fixed-point integer value of the z parameter
 	printf("z_d parameter= %f\n", ((float)z_i / (float)(FIXED_POINT_SCALE))); // prints the floating-point value of the z parameter
