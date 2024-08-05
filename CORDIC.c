@@ -1,5 +1,7 @@
-#include <math.h>
 #include <stdio.h>
+
+#define FIXED_POINT_SCALE 32768. // convert float to int by 1 << 15 (2^15)
+#define A_ 1.64676025806 // prod_{i=0}^{n} (sqrt{1+2^{-2i}})
 
 /* BARR-C Standards Followed:
 	- Surrounding logical OR operands with parantheses
@@ -11,20 +13,6 @@
 	- Using a whitespace after commas, semicolons, and parentheses
 	- Omitting a whitespace before and after parentheses surrounding expressions, function calls, and type casts
 */
-
-//maths visualized on desmos links:
-// https://www.desmos.com/calculator/go3wqxm0hu <- Rotation Mode
-/*
-	TODO:
-		- Do a SIMD approach to the shifts, may need to utilize neon's "vectorization", whether it be embedded asm, changing manually in the .s file or specifying the --vectorize in compilation
-			-> id imagine we'd change our registers from "r1 = 0xAB r2 = 0xCD" to "r3 = 0xABCD" and do our calculations on r3, then port them back to r1 and r2.
-		- n issue slot machine? check it out..
-		- change int size for addition and subtraction, if we lower it, these operations will be faster.
-*/
-
-#define FIXED_POINT_SCALE 32768. // convert float to int by 1 << 15 (2^15)
-#define A_ 1.64676025806 // prod_{i=0}^{n} (sqrt{1+2^{-2i}})
-#define M_PI 3.14159265359
 
 //table of precalculated atan(2^-i) up to 16 iterations
 float zftable[16] = {
@@ -54,8 +42,7 @@ static void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 
 	next_z = ztable[0];
 	while (i < 16) {
-		//extract sign of theta1
-		int sign = (!!theta1) | (theta1 >> 31); //BARR-C standard: surrounding logical OR operands with parantheses
+		int sign = (!!theta1) | (theta1 >> 31); //extract sign of theta1
 
 		x2 = x1 - (sign * (y1 >> i));
 		y2 = y1 + (sign * (x1 >> i));
@@ -67,7 +54,6 @@ static void CORDIC_Rotating(int* x, int* y, int* theta, int ztable[16]) {
 	}
 	*x = x1;
 	*y = y1;
-
 	*theta = theta1;
 }
 
@@ -79,7 +65,7 @@ static void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
 
 	next_z = ztable[0];
 	while (i < 16) {
-		int sign = (!!y1) | (y1 >> 31); 
+		int sign = (!!y1) | (y1 >> 31); //extract sign of theta1
 		
 		x2 = x1 + (sign * (y1 >> i));
 		y2 = y1 - (sign * (x1 >> i));
@@ -91,64 +77,78 @@ static void CORDIC_Vectoring(int* x, int* y, int* z, int ztable[16]) {
 	}
 	*x = x1;
 	*y = y1;
-	
 	*z = z1;
 }
 
 //Acts as current testbench
 int main() {
 	int zitable[16];
-	float x_d, y_d, z_d; //64-bit floating-point variables 
-	volatile int x_i, y_i, z_i;  //integer fixed-point variables
+	float x_d, y_d, z_d; //32-bit floating-point variables for the input vector
+	volatile int x_i, y_i, z_i; //32-bit signed integers used to rep 16 bit fixed-point values of the input vector
 
-	//uncomment these variables for Vectoring Mode testbench
+	/* Vectoring Mode testbenches */
+
+	//test undefined behavior
+	/*
 	x_d = 0.;
 	y_d = 0.;
 	z_d = 0;
+	*/
 
-	//uncomment these variables for Rotation Mode testbench
-	//x_d = 1.;  
-	//y_d = 0.; 
-	//z_d = 33; 
+	//test slides example
+	/*
+	x_d = 0.85;
+	y_d = 0.76;
+	z_d = 0.0;
+	*/
 
-	//promote 64-bit floating-point numbers to 16-bit precision integers
-	x_i = (int)(x_d * (FIXED_POINT_SCALE));
-	y_i = (int)(y_d * (FIXED_POINT_SCALE));
-	z_i = (int)(z_d * (FIXED_POINT_SCALE));
+	/* Rotation Mode testbenches */
+
+	//test
+	/*
+	x_d = 1.;  
+	y_d = 0.; 
+	z_d = -20.335; 
+	*/
+
+	//test rounding (20.45*32768 = 670105.6)
+	x_d = 1.;  
+	y_d = 0.; 
+	z_d = 20.45; 
+	
+
+	/* Promote 32-bit floating-point numbers to 16-bit precision integers */
+	x_i = (int)((x_d * (FIXED_POINT_SCALE)) + 0.5); // add 0.5 to round to the nearest integer
+	y_i = (int)((y_d * (FIXED_POINT_SCALE)) + 0.5); // add 0.5 to round to the nearest integer
+	z_i = (int)((z_d * (FIXED_POINT_SCALE)) + 0.5); // add 0.5 to round to the nearest integer
 
 	printf("Debug prints:\n\n");
 	printf("64-bit float x_d = %f\t\t\t16-bit int x_i = %i\n", x_d, x_i);
 	printf("64-bit float y_d = %f\t\t\t16-bit int y_i = %i\n", y_d, y_i);
 	printf("64-bit float z_d = %f\t\t\t16-bit int z_i = %i\n", z_d, z_i);
 
-	//generate a fixed-point version of the global zftable of floating-point angles
+	/* Generate a fixed-point version of the global zftable of floating-point angles */
 	register int i;
 	for (i = 0; i < 16; i++) {
 		zitable[i] = (int)(zftable[i] * (FIXED_POINT_SCALE));
 	}
 
-	//CORDIC_Rotating(&x_i, &y_i, &z_i, zitable);
-	CORDIC_Vectoring(&x_i, &y_i, &z_i, zitable);
-
 	//float x_out = ((x_i == 0.) ? NAN : (float)x_i / 19898.4641751); // this constant is (FIXED_POINT_SCALE)) / (A_)
+	
+	/* Rotation Mode */
+	CORDIC_Rotating(&x_i, &y_i, &z_i, zitable);
 
-	printf("z_i parameter= %d\n", z_i); // prints the fixed-point integer value of the z parameter
-	printf("z_d parameter= %f\n", ((float)z_i / (float)(FIXED_POINT_SCALE))); // prints the floating-point value of the z parameter
+	printf("\n\nResults of CORDIC_Rotation:\n\n");
+	printf("Cosine result x_i = %f\n", ((float)x_i / (FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
+	printf("Sine result y_i = %f\n", ((float)y_i / (FIXED_POINT_SCALE)) / (A_)); 
 
-	//uncomment for Rotation Mode testbench
-	//printf("\n\nResults of CORDIC_Rotation:\n\n");
-	//printf("Cosine result x_i = %f\n", ((float)x_i / (FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
-	//printf("Sine result y_i = %f\n", ((float)y_i / (FIXED_POINT_SCALE)) / (A_)); 
-	//printf("Angle z_d = %f\n", ((float)z_i / (FIXED_POINT_SCALE)));
-	//printf("Actual cosine of given angle = %f\n", cos(z_d * M_PI / 180)); // compare with math.h cos function
-	//printf("Actual sine of given angle = %f\n", sin(z_d * M_PI / 180)); // compare with math.h sin function
+	/* Vectoring Mode */
+	/*CORDIC_Vectoring(&x_i, &y_i, &z_i, zitable);
 
-	//uncomment for Vectoring Mode testbench
 	printf("\n\nResults of CORDIC_Vectoring:\n\n");
 	printf("Scaled magnitude result x_i = %f\n", ((double)x_i / (double)(FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
-	printf("y_i  = %f\n", ((double)y_i / (double)(FIXED_POINT_SCALE)) / (A_)); 
 	printf("Angle of vector result z_i = %f\n", ((double)z_i / (double)(FIXED_POINT_SCALE)));
-	//printf("Actual angle of vector = %f\n", atan2(y_d, x_d) * 180 / M_PI); // compare with math.h atan2 function
+	*/
 
 	return 0;
 }
