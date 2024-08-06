@@ -2,7 +2,7 @@
 
 #define FIXED_POINT_SCALE 32768. // convert float to int by 1 << 15 (2^15)
 #define A_ 1.64676025806 // prod_{i=0}^{n} (sqrt{1+2^{-2i}})
-
+static float NAN = 0.0 / 0.0;
 /* BARR-C Standards Followed:
 	- Surrounding logical OR operands with parantheses
 	- Using const keyword for variables that are not modified
@@ -102,7 +102,7 @@ int main() {
 	//test rounding (20.45*32768 = 670105.6)
 	x_d = 1.;  
 	y_d = 0.; 
-	z_d = 20.45; 
+	z_d = 0.;
 	
 
 	/* Promote 32-bit floating-point numbers to 16-bit precision integers */
@@ -115,22 +115,24 @@ int main() {
 	printf("64-bit float y_d = %f\t\t\t16-bit int y_i = %i\n", y_d, y_i);
 	printf("64-bit float z_d = %f\t\t\t16-bit int z_i = %i\n", z_d, z_i);
 
-	//float x_out = ((x_i == 0.) ? NAN : (float)x_i / 19898.4641751); // this constant is (FIXED_POINT_SCALE)) / (A_)
+	float x_out = ((x_i == 0.) ? (float)NAN : (float)x_i / 19898.4641751); // this constant is (FIXED_POINT_SCALE)) / (A_)
 	
 	/* Rotation Mode */
+	/*
 	CORDIC_Rotating(&x_i, &y_i, &z_i);
-
+	
 	printf("\n\nResults of CORDIC_Rotation:\n\n");
 	printf("Cosine result x_i = %.12f\n", ((float)x_i / (FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
 	printf("Sine result y_i = %.12f\n", ((float)y_i / (FIXED_POINT_SCALE)) / (A_)); 
-
+	*/
+	
 	/* Vectoring Mode */
-	/*CORDIC_Vectoring(&x_i, &y_i, &z_i);
+	CORDIC_Vectoring(&x_i, &y_i, &z_i);
 
 	printf("\n\nResults of CORDIC_Vectoring:\n\n");
-	printf("Scaled magnitude result x_i = %f\n", ((double)x_i / (double)(FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
-	printf("Angle of vector result z_i = %f\n", ((double)z_i / (double)(FIXED_POINT_SCALE)));
-	*/
+	printf("Scaled magnitude result x_i = %.12f\n", ((double)x_out / (double)(FIXED_POINT_SCALE)) / (A_)); // A_ is used to transcribe from accumulated angle component to plain component
+	printf("Angle of vector result z_i = %.12f\n", ((double)z_i / (double)(FIXED_POINT_SCALE)));
+	
 
 	return 0;
 }
